@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fortepiano — Teachers</title>
+<style>
+  :root { --ink:#1a1410; --paper:#faf7f2; --cream:#f2ede4; --border:#e0d8cc; --muted:#8a8278; --rust:#c25c3a; color-scheme: light; }
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--paper); color: var(--ink); min-height: 100vh; }
+  .env { background: var(--rust); color: #fff; text-align: center; font-size: 11px; font-weight: 600; letter-spacing: .1em; padding: 6px; display: none; }
+  header { background: var(--ink); color: var(--paper); padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; }
+  .brand { font-family: Georgia, serif; font-size: 22px; color: #e8b86d; }
+  .who { font-size: 13px; color: var(--muted); }
+  .who b { color: var(--paper); font-weight: 500; }
+  main { max-width: 480px; margin: 0 auto; padding: 20px 16px 40px; }
+  .label { font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+  .card { display: flex; align-items: center; gap: 14px; background: #fff; border: 1.5px solid var(--border); border-radius: 14px; padding: 14px 16px; margin-bottom: 8px; }
+  .avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--cream); border: 1.5px solid var(--border); display: flex; align-items: center; justify-content: center; font-family: Georgia, serif; flex-shrink: 0; }
+  .name { flex: 1; font-weight: 500; }
+  .badge { font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; padding: 3px 8px; border-radius: 100px; background: #fdf8ef; color: #b8860b; }
+  .msg { text-align: center; padding: 60px 16px; color: var(--muted); line-height: 1.6; }
+  .msg h2 { font-family: Georgia, serif; color: var(--ink); margin-bottom: 10px; }
+  button { margin-top: 16px; background: var(--ink); color: var(--paper); border: 0; border-radius: 12px; padding: 12px 22px; font-size: 14px; font-weight: 600; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="env" id="env"></div>
+<header>
+  <div class="brand">Fortepiano</div>
+  <div class="who" id="who"></div>
+</header>
+<main id="main"><div class="msg">Loading…</div></main>
+
+<script>
+  // Two backends, chosen by where the page is served. Paste each web app URL (ends in /exec).
+  const STAGING_URL = 'https://script.google.com/macros/s/AKfycbxkO49Xer7spfkvOU7qJgl3zh15Rd_5c4K2fDMLU5L1103-cy-Iau1HzINsx3TmzpzXig/exec';
+  const PROD_URL = '';
+  const API_URL = location.hostname === 'teachers.fortepiano.in' ? PROD_URL : STAGING_URL;
+  const KEY = 'fp_token';
+
+  const main = document.getElementById('main');
+
+  function show(title, text, retry) {
+    main.replaceChildren();
+    const d = document.createElement('div'); d.className = 'msg';
+    const h = document.createElement('h2'); h.textContent = title;
+    const p = document.createElement('p'); p.textContent = text;
+    d.append(h, p);
+    if (retry) { const b = document.createElement('button'); b.textContent = 'Try again'; b.onclick = start; d.append(b); }
+    main.append(d);
+  }
+
+  // The link looks like https://page/#k=fp_abc... : save the token, then remove it from the address bar.
+  function loadToken() {
+    const m = location.hash.match(/^#k=(fp_[0-9a-f]+)$/);
+    if (m) {
+      try { localStorage.setItem(KEY, m[1]); } catch (e) {}
+      history.replaceState(null, '', location.pathname + location.search);
+      return m[1];
+    }
+    try { return localStorage.getItem(KEY); } catch (e) { return null; }
+  }
+
+  async function api(action, token) {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: action, token: token })
+    });
+    return res.json();
+  }
+
+  async function start() {
+    const token = loadToken();
+    if (!token) return show('Link needed', 'Open the personal link the Fortepiano admin sent you.');
+    if (!API_URL || API_URL.indexOf('PASTE_') === 0) return show('Not configured', 'This page has no backend address yet.');
+    show('Loading…', '');
+    try {
+      const [me, list] = await Promise.all([api('whoami', token), api('myStudents', token)]);
+      if (me.error === 'UNAUTHORIZED') {
+        try { localStorage.removeItem(KEY); } catch (e) {}
+        return show('Link not valid', 'Ask the Fortepiano admin for a new link.');
+      }
+      if (!me.ok || !list.ok) return show('Something went wrong', 'Please try again in a moment.', true);
+
+      if (me.environment !== 'PRODUCTION') {
+        const env = document.getElementById('env');
+        env.textContent = me.environment + ' — test data only';
+        env.style.display = 'block';
+      }
+      const who = document.getElementById('who');
+      who.replaceChildren('Teaching as ');
+      const b = document.createElement('b'); b.textContent = me.teacher.name; who.append(b);
+
+      main.replaceChildren();
+      const label = document.createElement('div'); label.className = 'label'; label.textContent = 'My students';
+      main.append(label);
+      if (list.students.length === 0) return main.append(Object.assign(document.createElement('div'), { className: 'msg', textContent: 'No students assigned yet.' }));
+      list.students.forEach(function (s) {
+        const card = document.createElement('div'); card.className = 'card';
+        const av = document.createElement('div'); av.className = 'avatar';
+        av.textContent = s.name.split(' ').map(function (w) { return w[0]; }).join('').slice(0, 2).toUpperCase();
+        const nm = document.createElement('div'); nm.className = 'name'; nm.textContent = s.name;
+        card.append(av, nm);
+        if (s.status === 'TRIAL') { const t = document.createElement('span'); t.className = 'badge'; t.textContent = 'Trial'; card.append(t); }
+        main.append(card);
+      });
+    } catch (e) {
+      show('No connection', 'Check your internet and try again.', true);
+    }
+  }
+  start();
+</script>
+</body>
+</html>
