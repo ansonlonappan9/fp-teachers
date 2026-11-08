@@ -60,7 +60,7 @@
   const API_URL = location.hostname === 'teachers.fortepiano.in' ? PROD_URL : STAGING_URL;
   const KEY = 'fp_token';
   const main = document.getElementById('main');
-  const S = { token: null, students: [], stages: [], logged: {}, today: '', maxBack: 3 };
+  const S = { token: null, role: '', students: [], stages: [], logged: {}, today: '', maxBack: 3 };
 
   const ERRORS = {
     FUTURE_DATE: 'The class date cannot be in the future.',
@@ -69,6 +69,7 @@
     ALREADY_LOGGED: 'This class is already logged for that date.',
     NOT_YOUR_STUDENT: 'This student is not assigned to you.',
     KIND_MISMATCH: 'The class type does not match this student’s status. Ask the admin to update the student.',
+    NOT_ALLOWED: 'Only the head teacher can log assessments.',
     BAD_STAGE: 'That stage is not available. Pick another one.'
   };
 
@@ -116,12 +117,13 @@
     const list = await api('myStudents');
     if (list.error === 'UNAUTHORIZED') return unauthorized();
     if (!list.ok) return show('Something went wrong', 'Please try again in a moment.', true);
-    Object.assign(S, { students: list.students, stages: list.stages, logged: list.loggedToday, today: list.today, maxBack: list.backdateMaxDays });
+    Object.assign(S, { students: list.students, stages: list.stages || [], logged: list.loggedToday || {}, today: list.today, maxBack: list.backdateMaxDays == null ? 3 : list.backdateMaxDays });
     showList();
   }
 
   function showList() {
-    main.replaceChildren(h('h1', { textContent: 'My students' }));
+    main.replaceChildren(h('h1', { textContent: 'My students' }),
+      S.role === 'ADMIN' ? h('button', { className: 'back', type: 'button', textContent: 'Log an assessment ›', onclick: showPicker }) : null);
     if (!S.students.length) return main.append(h('div', { className: 'msg', textContent: 'No students are assigned to you yet.' }));
     S.students.forEach(s => {
       const done = S.logged[s.studentId];
@@ -133,14 +135,13 @@
     });
   }
 
-  function showForm(s) {
+  function showForm(s, assessment) {
     const requestId = 'r' + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2));
     let status = 'ATTENDED';
 
     const bAtt = h('button', { type: 'button', className: 'att', textContent: 'Attended' });
     const bAbs = h('button', { type: 'button', className: 'abs', textContent: 'Absent' });
     const date = h('input', { type: 'date', id: 'f-date', value: S.today, min: addDays(S.today, -S.maxBack), max: S.today });
-    const assess = h('input', { type: 'checkbox', id: 'f-assess' });
     const stage = h('select', { id: 'f-stage' }, h('option', { value: '', textContent: 'Select stage' }),
       ...S.stages.map(g => h('option', { value: g.stageId, textContent: g.name })));
     const coveredLabel = h('label', { htmlFor: 'f-covered' });
@@ -172,7 +173,7 @@
       try {
         r = await api('logClass', {
           requestId, studentId: s.studentId, classDate: date.value, status,
-          kind: s.status === 'TRIAL' ? 'TRIAL' : (assess.checked ? 'ASSESSMENT' : 'REGULAR'),
+          kind: assessment ? 'ASSESSMENT' : (s.status === 'TRIAL' ? 'TRIAL' : 'REGULAR'),
           stageId: stage.value, covered: covered.value, homework: status === 'ABSENT' ? '' : hw.value
         });
       } catch (e) {
@@ -185,20 +186,35 @@
         const tooOld = `Classes can be logged up to ${S.maxBack} days late. Ask the admin to add this one.`;
         return say(r.error === 'TOO_OLD' ? tooOld : (ERRORS[r.error] || 'Could not save. Check the form and try again.'));
       }
-      S.logged[s.studentId] = status;
+      if (!assessment) S.logged[s.studentId] = status;
       showDone(s, status, date.value, r);
     };
 
     main.replaceChildren(
       h('button', { className: 'back', type: 'button', textContent: '‹ Back to students', onclick: showList }),
-      h('h1', { textContent: s.name }),
+      h('h1', { textContent: assessment ? 'Assessment: ' + s.name : s.name }),
       h('div', { className: 'seg' }, bAtt, bAbs),
       h('div', { className: 'field' }, h('label', { htmlFor: 'f-date', textContent: 'Class date' }), date),
-      s.status === 'TRIAL' ? h('p', { className: 'note show', style: 'background:#fdf8ef;color:#8a6508;margin:0 0 16px', textContent: 'This is a trial class.' })
-        : h('div', { className: 'check' }, assess, h('label', { htmlFor: 'f-assess', textContent: 'This is the assessment class', style: 'margin:0;font-weight:400;color:var(--ink)' })),
+      (assessment || s.status === 'TRIAL') ? h('p', { className: 'note show', style: 'background:#fdf8ef;color:#8a6508;margin:0 0 16px', textContent: assessment ? 'Assessment session: not paid, and it does not use up a paid class.' : 'This is a trial class.' }) : null,
       h('div', { className: 'field' }, h('label', { htmlFor: 'f-stage', textContent: 'Stage' }), stage),
       h('div', { className: 'field' }, coveredLabel, covered),
       hwField, submit, note);
+  }
+
+  async function showPicker() {
+    show('Loading…', '');
+    try {
+      const r = await api('allStudents');
+      if (r.error === 'UNAUTHORIZED') return unauthorized();
+      if (!r.ok) return show('Something went wrong', 'Please try again in a moment.', true);
+      main.replaceChildren(
+        h('button', { className: 'back', type: 'button', textContent: '‹ Back to students', onclick: showList }),
+        h('h1', { textContent: 'Log an assessment' }),
+        ...r.students.map(st => h('button', { className: 'card', type: 'button', onclick: () => showForm(st, true) },
+          h('span', { className: 'avatar', textContent: initials(st.name) }), h('span', { className: 'name', textContent: st.name }))));
+    } catch (e) {
+      show('Could not load', 'Check your internet and try again. Detail for the admin: ' + (e && e.message ? e.message : e), true);
+    }
   }
 
   function showDone(s, status, classDate, r) {
@@ -226,10 +242,11 @@
         env.style.display = 'block';
       }
       const who = document.getElementById('who');
+      S.role = me.teacher.role;
       who.replaceChildren('Teaching as ', h('b', { textContent: me.teacher.name }));
       await loadStudents();
     } catch (e) {
-      show('No connection', 'Check your internet and try again.', true);
+      show('Could not load', 'Check your internet and try again. If it keeps happening, tell the admin this detail: ' + (e && e.message ? e.message : e), true);
     }
   }
   start();
