@@ -79,6 +79,8 @@
     e.append(...kids.filter(k => k != null));
     return e;
   }
+  // replaceChildren turns a null argument into the text "null", so drop nulls first.
+  const put = (...k) => main.replaceChildren(...k.filter(x => x != null));
   const initials = n => n.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
   const addDays = (iso, n) => new Date(Date.parse(iso + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
   const niceDate = iso => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' });
@@ -122,7 +124,7 @@
   }
 
   function showList() {
-    main.replaceChildren(h('h1', { textContent: 'My students' }),
+    put(h('h1', { textContent: 'My students' }),
       S.role === 'ADMIN' ? h('button', { className: 'back', type: 'button', textContent: 'Log an assessment ›', onclick: showPicker }) : null);
     if (!S.students.length) return main.append(h('div', { className: 'msg', textContent: 'No students are assigned to you yet.' }));
     S.students.forEach(s => {
@@ -190,7 +192,7 @@
       showDone(s, status, date.value, r);
     };
 
-    main.replaceChildren(
+    put(
       h('button', { className: 'back', type: 'button', textContent: '‹ Back to students', onclick: showList }),
       h('h1', { textContent: assessment ? 'Assessment: ' + s.name : s.name }),
       h('div', { className: 'seg' }, bAtt, bAbs),
