@@ -5,23 +5,44 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fortepiano — Teachers</title>
 <style>
-  :root { --ink:#1a1410; --paper:#faf7f2; --cream:#f2ede4; --border:#e0d8cc; --muted:#8a8278; --rust:#c25c3a; color-scheme: light; }
+  /* Same look as the V1 app on purpose: teachers already know it. */
+  :root { --ink:#1a1410; --paper:#faf7f2; --cream:#f2ede4; --border:#e0d8cc; --muted:#6f685f; --rust:#c25c3a; --sage:#4a6b4c; --gold:#e8b86d; color-scheme: light; }
   * { box-sizing: border-box; margin: 0; }
   body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--paper); color: var(--ink); min-height: 100vh; }
-  .env { background: var(--rust); color: #fff; text-align: center; font-size: 11px; font-weight: 600; letter-spacing: .1em; padding: 6px; display: none; }
+  :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .env { background: var(--rust); color: #fff; text-align: center; font-size: 12px; font-weight: 600; padding: 6px; display: none; }
   header { background: var(--ink); color: var(--paper); padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; }
-  .brand { font-family: Georgia, serif; font-size: 22px; color: #e8b86d; }
-  .who { font-size: 13px; color: var(--muted); }
+  .brand { font-family: Georgia, serif; font-size: 22px; color: var(--gold); }
+  .who { font-size: 13px; color: #b8b0a4; }
   .who b { color: var(--paper); font-weight: 500; }
-  main { max-width: 480px; margin: 0 auto; padding: 20px 16px 40px; }
-  .label { font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
-  .card { display: flex; align-items: center; gap: 14px; background: #fff; border: 1.5px solid var(--border); border-radius: 14px; padding: 14px 16px; margin-bottom: 8px; }
+  main { max-width: 480px; margin: 0 auto; padding: 20px 16px 48px; }
+  h1 { font-family: Georgia, serif; font-size: 22px; font-weight: 400; margin-bottom: 14px; }
+  .card { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; background: #fff; border: 1.5px solid var(--border); border-radius: 14px; padding: 14px 16px; margin-bottom: 8px; }
+  .card:hover { border-color: var(--gold); }
   .avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--cream); border: 1.5px solid var(--border); display: flex; align-items: center; justify-content: center; font-family: Georgia, serif; flex-shrink: 0; }
   .name { flex: 1; font-weight: 500; }
-  .badge { font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; padding: 3px 8px; border-radius: 100px; background: #fdf8ef; color: #b8860b; }
-  .msg { text-align: center; padding: 60px 16px; color: var(--muted); line-height: 1.6; }
-  .msg h2 { font-family: Georgia, serif; color: var(--ink); margin-bottom: 10px; }
-  button { margin-top: 16px; background: var(--ink); color: var(--paper); border: 0; border-radius: 12px; padding: 12px 22px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .badge { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 100px; background: #fdf8ef; color: #8a6508; }
+  .badge.done { background: #eef5ee; color: var(--sage); }
+  .badge.absent { background: #fdf0ec; color: var(--rust); }
+  .msg { text-align: center; padding: 56px 16px; color: var(--muted); line-height: 1.6; }
+  .msg h2 { font-family: Georgia, serif; font-weight: 400; color: var(--ink); margin-bottom: 10px; }
+  .back { background: none; border: 0; font: inherit; color: var(--muted); cursor: pointer; padding: 4px 0; margin-bottom: 12px; }
+  .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 18px; }
+  .seg button { font: inherit; font-weight: 500; padding: 13px; border-radius: 12px; border: 1.5px solid var(--border); background: #fff; color: var(--muted); cursor: pointer; }
+  .seg button[aria-pressed="true"].att { border-color: var(--sage); color: var(--sage); background: #eef5ee; }
+  .seg button[aria-pressed="true"].abs { border-color: var(--rust); color: var(--rust); background: #fdf0ec; }
+  label { display: block; font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+  .field { margin-bottom: 16px; }
+  input[type=date], select, textarea { width: 100%; font: inherit; color: var(--ink); background: #fff; border: 1.5px solid var(--border); border-radius: 12px; padding: 11px 13px; }
+  textarea { resize: none; line-height: 1.5; }
+  .check { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; font-size: 14px; }
+  .check input { width: 18px; height: 18px; }
+  .btn { width: 100%; background: var(--ink); color: var(--paper); border: 0; border-radius: 14px; padding: 15px; font: inherit; font-weight: 600; cursor: pointer; margin-top: 4px; }
+  .btn:disabled { background: var(--muted); cursor: not-allowed; }
+  .note { font-size: 14px; line-height: 1.5; margin-top: 12px; padding: 11px 13px; border-radius: 12px; display: none; }
+  .note.show { display: block; }
+  .note.error { background: #fdf0ec; color: #8f3a1f; }
+  .ok { background: #eef5ee; border: 1.5px solid var(--sage); border-radius: 14px; padding: 18px; margin-bottom: 16px; line-height: 1.55; }
 </style>
 </head>
 <body>
@@ -38,17 +59,32 @@
   const PROD_URL = '';
   const API_URL = location.hostname === 'teachers.fortepiano.in' ? PROD_URL : STAGING_URL;
   const KEY = 'fp_token';
-
   const main = document.getElementById('main');
+  const S = { token: null, students: [], stages: [], logged: {}, today: '', maxBack: 3 };
+
+  const ERRORS = {
+    FUTURE_DATE: 'The class date cannot be in the future.',
+    BAD_DATE: 'Pick a valid class date.',
+    REASON_REQUIRED: 'Add a short reason for the absence.',
+    ALREADY_LOGGED: 'This class is already logged for that date.',
+    NOT_YOUR_STUDENT: 'This student is not assigned to you.',
+    KIND_MISMATCH: 'The class type does not match this student’s status. Ask the admin to update the student.',
+    BAD_STAGE: 'That stage is not available. Pick another one.'
+  };
+
+  function h(tag, props, ...kids) {
+    const e = document.createElement(tag);
+    Object.assign(e, props || {});
+    e.append(...kids.filter(k => k != null));
+    return e;
+  }
+  const initials = n => n.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  const addDays = (iso, n) => new Date(Date.parse(iso + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const niceDate = iso => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 
   function show(title, text, retry) {
-    main.replaceChildren();
-    const d = document.createElement('div'); d.className = 'msg';
-    const h = document.createElement('h2'); h.textContent = title;
-    const p = document.createElement('p'); p.textContent = text;
-    d.append(h, p);
-    if (retry) { const b = document.createElement('button'); b.textContent = 'Try again'; b.onclick = start; d.append(b); }
-    main.append(d);
+    main.replaceChildren(h('div', { className: 'msg' }, h('h2', { textContent: title }), h('p', { textContent: text }),
+      retry ? h('button', { className: 'btn', textContent: 'Try again', onclick: start, style: 'max-width:200px;margin-top:16px' }) : null));
   }
 
   // The link looks like https://page/#k=fp_abc... : save the token, then remove it from the address bar.
@@ -62,50 +98,136 @@
     try { return localStorage.getItem(KEY); } catch (e) { return null; }
   }
 
-  async function api(action, token) {
+  async function api(action, extra) {
     const res = await fetch(API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: action, token: token })
+      body: JSON.stringify(Object.assign({ action: action, token: S.token }, extra || {}))
     });
     return res.json();
   }
 
+  function unauthorized() {
+    try { localStorage.removeItem(KEY); } catch (e) {}
+    show('This link no longer works', 'Ask the Fortepiano admin for a new link.');
+  }
+
+  async function loadStudents() {
+    const list = await api('myStudents');
+    if (list.error === 'UNAUTHORIZED') return unauthorized();
+    if (!list.ok) return show('Something went wrong', 'Please try again in a moment.', true);
+    Object.assign(S, { students: list.students, stages: list.stages, logged: list.loggedToday, today: list.today, maxBack: list.backdateMaxDays });
+    showList();
+  }
+
+  function showList() {
+    main.replaceChildren(h('h1', { textContent: 'My students' }));
+    if (!S.students.length) return main.append(h('div', { className: 'msg', textContent: 'No students are assigned to you yet.' }));
+    S.students.forEach(s => {
+      const done = S.logged[s.studentId];
+      main.append(h('button', { className: 'card', type: 'button', onclick: () => showForm(s) },
+        h('span', { className: 'avatar', textContent: initials(s.name) }),
+        h('span', { className: 'name', textContent: s.name }),
+        s.status === 'TRIAL' ? h('span', { className: 'badge', textContent: 'Trial' }) : null,
+        done ? h('span', { className: 'badge ' + (done === 'ABSENT' ? 'absent' : 'done'), textContent: done === 'ABSENT' ? 'Absent today' : 'Logged today' }) : null));
+    });
+  }
+
+  function showForm(s) {
+    const requestId = 'r' + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2));
+    let status = 'ATTENDED';
+
+    const bAtt = h('button', { type: 'button', className: 'att', textContent: 'Attended' });
+    const bAbs = h('button', { type: 'button', className: 'abs', textContent: 'Absent' });
+    const date = h('input', { type: 'date', id: 'f-date', value: S.today, min: addDays(S.today, -S.maxBack), max: S.today });
+    const assess = h('input', { type: 'checkbox', id: 'f-assess' });
+    const stage = h('select', { id: 'f-stage' }, h('option', { value: '', textContent: 'Select stage' }),
+      ...S.stages.map(g => h('option', { value: g.stageId, textContent: g.name })));
+    const coveredLabel = h('label', { htmlFor: 'f-covered' });
+    const covered = h('textarea', { id: 'f-covered', rows: 3 });
+    const hwLabel = h('label', { htmlFor: 'f-hw', textContent: 'Practice this week' });
+    const hw = h('textarea', { id: 'f-hw', rows: 3, placeholder: 'e.g. Bars 5–12 daily, 10 minutes of Hanon 3' });
+    const hwField = h('div', { className: 'field' }, hwLabel, hw);
+    const note = h('div', { className: 'note error', role: 'alert' });
+    const submit = h('button', { type: 'button', className: 'btn', textContent: 'Log class' });
+
+    function sync() {
+      bAtt.setAttribute('aria-pressed', status === 'ATTENDED');
+      bAbs.setAttribute('aria-pressed', status === 'ABSENT');
+      coveredLabel.textContent = status === 'ABSENT' ? 'Reason for the absence (required)' : 'What we covered';
+      covered.placeholder = status === 'ABSENT' ? 'e.g. Parent cancelled at 3 pm, child unwell' : 'e.g. Hanon 3–4, dynamics in piece B';
+      hwField.style.display = status === 'ABSENT' ? 'none' : '';
+    }
+    bAtt.onclick = () => { status = 'ATTENDED'; sync(); };
+    bAbs.onclick = () => { status = 'ABSENT'; sync(); };
+    sync();
+
+    function say(text) { note.textContent = text; note.classList.add('show'); }
+
+    submit.onclick = async () => {
+      note.classList.remove('show');
+      if (status === 'ABSENT' && covered.value.trim().length < 3) return say(ERRORS.REASON_REQUIRED);
+      submit.disabled = true; submit.textContent = 'Saving…';
+      let r;
+      try {
+        r = await api('logClass', {
+          requestId, studentId: s.studentId, classDate: date.value, status,
+          kind: s.status === 'TRIAL' ? 'TRIAL' : (assess.checked ? 'ASSESSMENT' : 'REGULAR'),
+          stageId: stage.value, covered: covered.value, homework: status === 'ABSENT' ? '' : hw.value
+        });
+      } catch (e) {
+        submit.disabled = false; submit.textContent = 'Log class';
+        return say('Not saved: no connection. Check your internet and tap Log class again. It will not create a duplicate.');
+      }
+      if (r.error === 'UNAUTHORIZED') return unauthorized();
+      if (!r.ok) {
+        submit.disabled = false; submit.textContent = 'Log class';
+        const tooOld = `Classes can be logged up to ${S.maxBack} days late. Ask the admin to add this one.`;
+        return say(r.error === 'TOO_OLD' ? tooOld : (ERRORS[r.error] || 'Could not save. Check the form and try again.'));
+      }
+      S.logged[s.studentId] = status;
+      showDone(s, status, date.value, r);
+    };
+
+    main.replaceChildren(
+      h('button', { className: 'back', type: 'button', textContent: '‹ Back to students', onclick: showList }),
+      h('h1', { textContent: s.name }),
+      h('div', { className: 'seg' }, bAtt, bAbs),
+      h('div', { className: 'field' }, h('label', { htmlFor: 'f-date', textContent: 'Class date' }), date),
+      s.status === 'TRIAL' ? h('p', { className: 'note show', style: 'background:#fdf8ef;color:#8a6508;margin:0 0 16px', textContent: 'This is a trial class.' })
+        : h('div', { className: 'check' }, assess, h('label', { htmlFor: 'f-assess', textContent: 'This is the assessment class', style: 'margin:0;font-weight:400;color:var(--ink)' })),
+      h('div', { className: 'field' }, h('label', { htmlFor: 'f-stage', textContent: 'Stage' }), stage),
+      h('div', { className: 'field' }, coveredLabel, covered),
+      hwField, submit, note);
+  }
+
+  function showDone(s, status, classDate, r) {
+    const late = r.lateDays > 0 ? ` This is a late entry (${r.lateDays} day${r.lateDays > 1 ? 's' : ''}). It is paid with the month you log it, not the class month.` : '';
+    main.replaceChildren(
+      h('div', { className: 'ok' },
+        h('strong', { textContent: 'Class logged' }),
+        h('div', { textContent: `${s.name}: ${status === 'ABSENT' ? 'absent' : 'attended'}, ${niceDate(classDate)}.${late}` }),
+        h('div', { textContent: 'Send the parent update on WhatsApp as usual.', style: 'margin-top:8px;color:var(--muted)' })),
+      h('button', { className: 'btn', type: 'button', textContent: 'Back to students', onclick: showList }));
+  }
+
   async function start() {
-    const token = loadToken();
-    if (!token) return show('Link needed', 'Open the personal link the Fortepiano admin sent you.');
+    S.token = loadToken();
+    if (!S.token) return show('Link needed', 'Open the personal link the Fortepiano admin sent you.');
     if (!API_URL || API_URL.indexOf('PASTE_') === 0) return show('Not configured', 'This page has no backend address yet.');
     show('Loading…', '');
     try {
-      const [me, list] = await Promise.all([api('whoami', token), api('myStudents', token)]);
-      if (me.error === 'UNAUTHORIZED') {
-        try { localStorage.removeItem(KEY); } catch (e) {}
-        return show('Link not valid', 'Ask the Fortepiano admin for a new link.');
-      }
-      if (!me.ok || !list.ok) return show('Something went wrong', 'Please try again in a moment.', true);
-
+      const me = await api('whoami');
+      if (me.error === 'UNAUTHORIZED') return unauthorized();
+      if (!me.ok) return show('Something went wrong', 'Please try again in a moment.', true);
       if (me.environment !== 'PRODUCTION') {
         const env = document.getElementById('env');
-        env.textContent = me.environment + ' — test data only';
+        env.textContent = me.environment + ': test data only';
         env.style.display = 'block';
       }
       const who = document.getElementById('who');
-      who.replaceChildren('Teaching as ');
-      const b = document.createElement('b'); b.textContent = me.teacher.name; who.append(b);
-
-      main.replaceChildren();
-      const label = document.createElement('div'); label.className = 'label'; label.textContent = 'My students';
-      main.append(label);
-      if (list.students.length === 0) return main.append(Object.assign(document.createElement('div'), { className: 'msg', textContent: 'No students assigned yet.' }));
-      list.students.forEach(function (s) {
-        const card = document.createElement('div'); card.className = 'card';
-        const av = document.createElement('div'); av.className = 'avatar';
-        av.textContent = s.name.split(' ').map(function (w) { return w[0]; }).join('').slice(0, 2).toUpperCase();
-        const nm = document.createElement('div'); nm.className = 'name'; nm.textContent = s.name;
-        card.append(av, nm);
-        if (s.status === 'TRIAL') { const t = document.createElement('span'); t.className = 'badge'; t.textContent = 'Trial'; card.append(t); }
-        main.append(card);
-      });
+      who.replaceChildren('Teaching as ', h('b', { textContent: me.teacher.name }));
+      await loadStudents();
     } catch (e) {
       show('No connection', 'Check your internet and try again.', true);
     }
