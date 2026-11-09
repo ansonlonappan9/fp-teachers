@@ -23,6 +23,7 @@
   .name { flex: 1; font-weight: 500; }
   .badge { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 100px; background: #fdf8ef; color: #8a6508; }
   .badge.done { background: #eef5ee; color: var(--sage); }
+  .left { font-size: 12px; color: var(--muted); white-space: nowrap; }
   .badge.absent { background: #fdf0ec; color: var(--rust); }
   .msg { text-align: center; padding: 56px 16px; color: var(--muted); line-height: 1.6; }
   .msg h2 { font-family: Georgia, serif; font-weight: 400; color: var(--ink); margin-bottom: 10px; }
@@ -133,6 +134,8 @@
         h('span', { className: 'avatar', textContent: initials(s.name) }),
         h('span', { className: 'name', textContent: s.name }),
         s.status === 'TRIAL' ? h('span', { className: 'badge', textContent: 'Trial' }) : null,
+        s.renewalDue ? h('span', { className: 'badge', textContent: 'Renewal due' })
+          : (s.remaining != null ? h('span', { className: 'left', textContent: s.remaining + ' left' }) : null),
         done ? h('span', { className: 'badge ' + (done === 'ABSENT' ? 'absent' : 'done'), textContent: done === 'ABSENT' ? 'Absent today' : 'Logged today' }) : null));
     });
   }
@@ -189,6 +192,7 @@
         return say(r.error === 'TOO_OLD' ? tooOld : (ERRORS[r.error] || 'Could not save. Check the form and try again.'));
       }
       if (!assessment) S.logged[s.studentId] = status;
+      if (r.term) Object.assign(s, { remaining: r.term.remaining, renewalDue: r.term.renewalDue, reschedulesUsed: r.term.reschedulesUsed, canReschedule: r.term.canReschedule });
       showDone(s, status, date.value, r);
     };
 
@@ -225,6 +229,7 @@
       h('div', { className: 'ok' },
         h('strong', { textContent: 'Class logged' }),
         h('div', { textContent: `${s.name}: ${status === 'ABSENT' ? 'absent' : 'attended'}, ${niceDate(classDate)}.${late}` }),
+        r.term && r.term.remaining != null ? h('div', { textContent: r.term.renewalDue ? 'Classes left: 0. Renewal due.' : `Classes left: ${r.term.remaining}.` }) : null,
         h('div', { textContent: 'Send the parent update on WhatsApp as usual.', style: 'margin-top:8px;color:var(--muted)' })),
       h('button', { className: 'btn', type: 'button', textContent: 'Back to students', onclick: showList }));
   }
