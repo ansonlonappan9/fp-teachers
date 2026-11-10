@@ -134,8 +134,8 @@
         h('span', { className: 'avatar', textContent: initials(s.name) }),
         h('span', { className: 'name', textContent: s.name }),
         s.status === 'TRIAL' ? h('span', { className: 'badge', textContent: 'Trial' }) : null,
-        s.renewalDue ? h('span', { className: 'badge', textContent: 'Renewal due' })
-          : (s.remaining != null ? h('span', { className: 'left', textContent: s.remaining + ' left' }) : null),
+        s.remaining != null ? h('span', { className: 'left', textContent: s.remaining + ' left' }) : null,
+        s.renewalDue ? h('span', { className: 'badge', textContent: 'Renewal due' }) : null,
         done ? h('span', { className: 'badge ' + (done === 'ABSENT' ? 'absent' : 'done'), textContent: done === 'ABSENT' ? 'Absent today' : 'Logged today' }) : null));
     });
   }
@@ -229,7 +229,7 @@
       h('div', { className: 'ok' },
         h('strong', { textContent: 'Class logged' }),
         h('div', { textContent: `${s.name}: ${status === 'ABSENT' ? 'absent' : 'attended'}, ${niceDate(classDate)}.${late}` }),
-        r.term && r.term.remaining != null ? h('div', { textContent: r.term.renewalDue ? 'Classes left: 0. Renewal due.' : `Classes left: ${r.term.remaining}.` }) : null,
+        r.term && r.term.remaining != null ? h('div', { textContent: `Classes left: ${r.term.remaining}.` + (r.term.renewalDue ? ' Renewal due.' : '') }) : null,
         h('div', { textContent: 'Send the parent update on WhatsApp as usual.', style: 'margin-top:8px;color:var(--muted)' })),
       h('button', { className: 'btn', type: 'button', textContent: 'Back to students', onclick: showList }));
   }
