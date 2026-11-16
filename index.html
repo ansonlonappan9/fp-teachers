@@ -32,6 +32,13 @@
   .ebar i { display: block; height: 100%; background: var(--gold); }
   .erow small, .enote { color: var(--muted); font-size: 13px; line-height: 1.5; }
   .big { font-family: Georgia, serif; font-size: 34px; margin: 4px 0; }
+  a.btn { display: block; text-align: center; text-decoration: none; }
+  .btn.ghost { background: #fff; color: var(--ink); border: 1.5px solid var(--border); }
+  .btn.wabtn { background: #25D366; color: #fff; }
+  .wa { background: #fff; border: 1.5px solid #25D366; border-radius: 16px; padding: 16px; margin-bottom: 16px; }
+  .wa-title { font-size: 13px; font-weight: 600; color: #1a8a3a; }
+  .wa-preview { white-space: pre-wrap; background: #f0fdf4; border: 1px solid #c3e6cb; border-radius: 10px; padding: 12px; font-size: 14px; line-height: 1.6; margin: 8px 0 12px; }
+  .wa-actions { display: grid; gap: 8px; }
   .ver { text-align: center; font-size: 11px; color: var(--muted); padding: 0 16px 24px; }
   .badge.absent { background: #fdf0ec; color: var(--rust); }
   .msg { text-align: center; padding: 56px 16px; color: var(--muted); line-height: 1.6; }
@@ -71,8 +78,8 @@
   const API_URL = location.hostname === 'teachers.fortepiano.in' ? PROD_URL : STAGING_URL;
   const KEY = 'fp_token';
   const main = document.getElementById('main');
-  const PAGE_VERSION = '2026-11-10.1';   // keep in step with APP_VERSION in Core.gs when both change
-  const S = { token: null, role: '', students: [], stages: [], logged: {}, today: '', maxBack: 3, view: 'msg', form: null };
+  const PAGE_VERSION = '2026-11-17.1';   // keep in step with APP_VERSION in Core.gs when both change
+  const S = { token: null, role: '', students: [], stages: [], logged: {}, loggedIds: {}, today: '', maxBack: 3, view: 'msg', form: null };
   document.getElementById('ver').textContent = 'page ' + PAGE_VERSION;
 
   const ERRORS = {
@@ -135,7 +142,7 @@
     const list = await api('myStudents');
     if (list.error === 'UNAUTHORIZED') return unauthorized();
     if (!list.ok) return show('Something went wrong', 'Please try again in a moment.', true);
-    Object.assign(S, { students: list.students, stages: list.stages || [], logged: list.loggedToday || {}, today: list.today, maxBack: list.backdateMaxDays == null ? 3 : list.backdateMaxDays });
+    Object.assign(S, { students: list.students, stages: list.stages || [], logged: list.loggedToday || {}, loggedIds: list.loggedIds || {}, today: list.today, maxBack: list.backdateMaxDays == null ? 3 : list.backdateMaxDays });
     showList();
   }
 
@@ -146,6 +153,42 @@
       const m = r.thisMonth;
       el.textContent = `This month: ${m.classes} class${m.classes === 1 ? '' : 'es'} · ${inr(m.total)}  ›`;
     } catch (e) { el.remove(); }
+  }
+
+  function messageBox(msg, note) {
+    const copy = h('button', { type: 'button', className: 'btn ghost', textContent: 'Copy message' });
+    copy.onclick = async () => {
+      try { await navigator.clipboard.writeText(msg); }
+      catch (e) {
+        const ta = h('textarea', { value: msg, readOnly: true });
+        document.body.append(ta); ta.select();
+        try { document.execCommand('copy'); } catch (x) {}
+        ta.remove();
+      }
+      copy.textContent = 'Copied ✓';
+      setTimeout(() => { copy.textContent = 'Copy message'; }, 2500);
+    };
+    const wa = h('a', { className: 'btn wabtn', href: 'https://wa.me/?text=' + encodeURIComponent(msg), target: '_blank', rel: 'noopener', textContent: 'Send on WhatsApp' });
+    return h('div', { className: 'wa' },
+      h('div', { className: 'wa-title', textContent: 'Parent update' }),
+      h('div', { className: 'wa-preview', textContent: msg }),
+      note ? h('div', { className: 'note show error', textContent: note }) : null,
+      h('div', { className: 'wa-actions' }, copy, wa));
+  }
+
+  async function showMessage(s, classId) {
+    show('Loading…', '');
+    try {
+      const r = await api('parentMessage', { classId });
+      if (r.error === 'UNAUTHORIZED') return unauthorized();
+      if (!r.ok) return show('Could not load the update', 'It may have been cancelled by the admin. Go back and check the list.', true);
+      S.view = 'message';
+      put(h('button', { className: 'back', type: 'button', textContent: '‹ Back to students', onclick: showList }),
+        h('h1', { textContent: 'Update: ' + s.name }),
+        messageBox(r.message, r.messageNote));
+    } catch (e) {
+      show('Could not load', 'Check your internet and try again.', true);
+    }
   }
 
   async function showEarnings() {
@@ -182,13 +225,13 @@
     if (!S.students.length) return main.append(h('div', { className: 'msg', textContent: 'No students are assigned to you yet.' }));
     S.students.forEach(s => {
       const done = S.logged[s.studentId];
-      main.append(h('button', { className: 'card', type: 'button', onclick: () => showForm(s) },
+      main.append(h('button', { className: 'card', type: 'button', onclick: (done && S.loggedIds[s.studentId]) ? () => showMessage(s, S.loggedIds[s.studentId]) : () => showForm(s) },
         h('span', { className: 'avatar', textContent: initials(s.name) }),
         h('span', { className: 'name', textContent: s.name }),
         s.status === 'TRIAL' ? h('span', { className: 'badge', textContent: 'Trial' }) : null,
         s.remaining != null ? h('span', { className: 'left', textContent: s.remaining + ' left' }) : null,
         s.renewalDue ? h('span', { className: 'badge', textContent: 'Renewal due' }) : null,
-        done ? h('span', { className: 'badge ' + (done === 'ABSENT' ? 'absent' : 'done'), textContent: done === 'ABSENT' ? 'Absent today' : 'Logged today' }) : null));
+        done ? h('span', { className: 'badge ' + (done === 'ABSENT' ? 'absent' : 'done'), textContent: (done === 'ABSENT' ? 'Absent today' : 'Logged today') + ' ›' }) : null));
     });
   }
 
@@ -244,7 +287,7 @@
         const tooOld = `Classes can be logged up to ${S.maxBack} days late. Ask the admin to add this one.`;
         return say(r.error === 'TOO_OLD' ? tooOld : (ERRORS[r.error] || 'Could not save. Check the form and try again.'));
       }
-      if (!assessment) S.logged[s.studentId] = status;
+      if (!assessment) { S.logged[s.studentId] = status; S.loggedIds[s.studentId] = r.classId; }
       if (r.term) Object.assign(s, { remaining: r.term.remaining, renewalDue: r.term.renewalDue, reschedulesUsed: r.term.reschedulesUsed, canReschedule: r.term.canReschedule });
       showDone(s, status, date.value, r);
     };
@@ -279,12 +322,13 @@
   function showDone(s, status, classDate, r) {
     S.view = 'done';
     const late = r.lateDays > 0 ? ` This is a late entry (${r.lateDays} day${r.lateDays > 1 ? 's' : ''}). It is paid with the month you log it, not the class month.` : '';
-    main.replaceChildren(
+    put(
       h('div', { className: 'ok' },
         h('strong', { textContent: 'Class logged' }),
         h('div', { textContent: `${s.name}: ${status === 'ABSENT' ? 'absent' : 'attended'}, ${niceDate(classDate)}.${late}` }),
         r.term && r.term.remaining != null ? h('div', { textContent: `Classes left: ${r.term.remaining}.` + (r.term.renewalDue ? ' Renewal due.' : '') }) : null,
-        h('div', { textContent: 'Send the parent update on WhatsApp as usual.', style: 'margin-top:8px;color:var(--muted)' })),
+        h('div', { textContent: r.message ? 'Your parent update is ready below.' : 'Send the parent update on WhatsApp as usual.', style: 'margin-top:8px;color:var(--muted)' })),
+      r.message ? messageBox(r.message, r.messageNote) : null,
       h('button', { className: 'btn', type: 'button', textContent: 'Back to students', onclick: showList }));
   }
 
@@ -321,7 +365,7 @@
       if (list.error === 'UNAUTHORIZED') return unauthorized();
       if (!list.ok) return;
       const oldToday = S.today;
-      Object.assign(S, { students: list.students, stages: list.stages || S.stages, logged: list.loggedToday || {}, today: list.today, maxBack: list.backdateMaxDays == null ? 3 : list.backdateMaxDays });
+      Object.assign(S, { students: list.students, stages: list.stages || S.stages, logged: list.loggedToday || {}, loggedIds: list.loggedIds || {}, today: list.today, maxBack: list.backdateMaxDays == null ? 3 : list.backdateMaxDays });
       if (S.view === 'list') showList();
       else if (S.view === 'form' && S.form && S.today !== oldToday) {
         const d = S.form.date;
