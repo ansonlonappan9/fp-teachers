@@ -24,6 +24,15 @@
   .badge { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 100px; background: #fdf8ef; color: #8a6508; }
   .badge.done { background: #eef5ee; color: var(--sage); }
   .left { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .strip { display: block; width: 100%; text-align: left; font: inherit; color: var(--ink); cursor: pointer; background: var(--cream); border: 1.5px solid var(--border); border-radius: 12px; padding: 11px 14px; margin-bottom: 14px; }
+  .strip:hover { border-color: var(--gold); }
+  .erow { background: #fff; border: 1.5px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; }
+  .ehead { display: flex; justify-content: space-between; margin-bottom: 8px; }
+  .ebar { height: 8px; background: var(--cream); border-radius: 100px; overflow: hidden; margin-bottom: 6px; }
+  .ebar i { display: block; height: 100%; background: var(--gold); }
+  .erow small, .enote { color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .big { font-family: Georgia, serif; font-size: 34px; margin: 4px 0; }
+  .ver { text-align: center; font-size: 11px; color: var(--muted); padding: 0 16px 24px; }
   .badge.absent { background: #fdf0ec; color: var(--rust); }
   .msg { text-align: center; padding: 56px 16px; color: var(--muted); line-height: 1.6; }
   .msg h2 { font-family: Georgia, serif; font-weight: 400; color: var(--ink); margin-bottom: 10px; }
@@ -53,6 +62,7 @@
   <div class="who" id="who"></div>
 </header>
 <main id="main"><div class="msg">Loading…</div></main>
+<footer class="ver" id="ver"></footer>
 
 <script>
   // Two backends, chosen by where the page is served. Paste each web app URL (ends in /exec).
@@ -61,7 +71,9 @@
   const API_URL = location.hostname === 'teachers.fortepiano.in' ? PROD_URL : STAGING_URL;
   const KEY = 'fp_token';
   const main = document.getElementById('main');
-  const S = { token: null, role: '', students: [], stages: [], logged: {}, today: '', maxBack: 3 };
+  const PAGE_VERSION = '2026-11-10.1';   // keep in step with APP_VERSION in Core.gs when both change
+  const S = { token: null, role: '', students: [], stages: [], logged: {}, today: '', maxBack: 3, view: 'msg', form: null };
+  document.getElementById('ver').textContent = 'page ' + PAGE_VERSION;
 
   const ERRORS = {
     FUTURE_DATE: 'The class date cannot be in the future.',
@@ -84,9 +96,12 @@
   const put = (...k) => main.replaceChildren(...k.filter(x => x != null));
   const initials = n => n.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
   const addDays = (iso, n) => new Date(Date.parse(iso + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const inr = n => '₹' + Number(n).toLocaleString('en-IN');
+  const niceMonth = ym => new Date(ym + '-01T00:00:00Z').toLocaleDateString('en-IN', { month: 'short', year: 'numeric', timeZone: 'UTC' });
   const niceDate = iso => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 
   function show(title, text, retry) {
+    S.view = 'msg';
     main.replaceChildren(h('div', { className: 'msg' }, h('h2', { textContent: title }), h('p', { textContent: text }),
       retry ? h('button', { className: 'btn', textContent: 'Try again', onclick: start, style: 'max-width:200px;margin-top:16px' }) : null));
   }
@@ -124,9 +139,46 @@
     showList();
   }
 
+  async function loadStrip(el) {
+    try {
+      const r = await api('myEarnings');
+      if (!r.ok) return el.remove();
+      const m = r.thisMonth;
+      el.textContent = `This month: ${m.classes} class${m.classes === 1 ? '' : 'es'} · ${inr(m.total)}  ›`;
+    } catch (e) { el.remove(); }
+  }
+
+  async function showEarnings() {
+    show('Loading…', '');
+    try {
+      const r = await api('myEarnings');
+      if (r.error === 'UNAUTHORIZED') return unauthorized();
+      if (!r.ok) return show('Something went wrong', 'Please try again in a moment.', true);
+      S.view = 'earnings';
+      const max = Math.max(1, ...r.months.map(m => m.total));
+      put(
+        h('button', { className: 'back', type: 'button', textContent: '‹ Back to students', onclick: showList }),
+        h('h1', { textContent: 'My earnings' }),
+        h('div', { className: 'erow' },
+          h('div', { className: 'enote', textContent: niceMonth(r.thisMonth.month) + ' so far' }),
+          h('div', { className: 'big', textContent: inr(r.thisMonth.total) }),
+          h('div', { className: 'enote', textContent: `${r.thisMonth.classes} class${r.thisMonth.classes === 1 ? '' : 'es'}. Classes are paid in the month you log them, subject to verification.` })),
+        r.months.length ? null : h('div', { className: 'msg', textContent: 'No classes logged yet.' }),
+        ...r.months.slice().reverse().map(m => h('div', { className: 'erow' },
+          h('div', { className: 'ehead' }, h('span', { textContent: niceMonth(m.month) }), h('b', { textContent: inr(m.total) })),
+          h('div', { className: 'ebar' }, h('i', { style: 'width:' + Math.max(0, Math.round(m.total / max * 100)) + '%' })),
+          h('small', { textContent: `${m.classes} class${m.classes === 1 ? '' : 'es'}` + (m.adjustments ? `, adjustments ${inr(m.adjustments)}` : '') }))));
+    } catch (e) {
+      show('Could not load', 'Check your internet and try again.', true);
+    }
+  }
+
   function showList() {
-    put(h('h1', { textContent: 'My students' }),
+    S.view = 'list'; S.form = null;
+    const strip = h('button', { className: 'strip', type: 'button', textContent: 'This month…', onclick: showEarnings });
+    put(h('h1', { textContent: 'My students' }), strip,
       S.role === 'ADMIN' ? h('button', { className: 'back', type: 'button', textContent: 'Log an assessment ›', onclick: showPicker }) : null);
+    loadStrip(strip);
     if (!S.students.length) return main.append(h('div', { className: 'msg', textContent: 'No students are assigned to you yet.' }));
     S.students.forEach(s => {
       const done = S.logged[s.studentId];
@@ -147,6 +199,7 @@
     const bAtt = h('button', { type: 'button', className: 'att', textContent: 'Attended' });
     const bAbs = h('button', { type: 'button', className: 'abs', textContent: 'Absent' });
     const date = h('input', { type: 'date', id: 'f-date', value: S.today, min: addDays(S.today, -S.maxBack), max: S.today });
+    S.view = 'form'; S.form = { date };
     const stage = h('select', { id: 'f-stage' }, h('option', { value: '', textContent: 'Select stage' }),
       ...S.stages.map(g => h('option', { value: g.stageId, textContent: g.name })));
     const coveredLabel = h('label', { htmlFor: 'f-covered' });
@@ -224,6 +277,7 @@
   }
 
   function showDone(s, status, classDate, r) {
+    S.view = 'done';
     const late = r.lateDays > 0 ? ` This is a late entry (${r.lateDays} day${r.lateDays > 1 ? 's' : ''}). It is paid with the month you log it, not the class month.` : '';
     main.replaceChildren(
       h('div', { className: 'ok' },
@@ -250,12 +304,37 @@
       }
       const who = document.getElementById('who');
       S.role = me.teacher.role;
+      document.getElementById('ver').textContent = 'page ' + PAGE_VERSION + ' · server ' + (me.version || '?');
       who.replaceChildren('Teaching as ', h('b', { textContent: me.teacher.name }));
       await loadStudents();
     } catch (e) {
       show('Could not load', 'Check your internet and try again. If it keeps happening, tell the admin this detail: ' + (e && e.message ? e.message : e), true);
     }
   }
+
+  // A tab left open overnight must not log under yesterday's date: after an idle spell, reload the data
+  // and move the form's date to the new day if it was still showing the old one.
+  let hiddenAt = 0;
+  async function refreshAfterIdle() {
+    try {
+      const list = await api('myStudents');
+      if (list.error === 'UNAUTHORIZED') return unauthorized();
+      if (!list.ok) return;
+      const oldToday = S.today;
+      Object.assign(S, { students: list.students, stages: list.stages || S.stages, logged: list.loggedToday || {}, today: list.today, maxBack: list.backdateMaxDays == null ? 3 : list.backdateMaxDays });
+      if (S.view === 'list') showList();
+      else if (S.view === 'form' && S.form && S.today !== oldToday) {
+        const d = S.form.date;
+        if (d.value === oldToday) d.value = S.today;
+        d.max = S.today; d.min = addDays(S.today, -S.maxBack);
+      }
+    } catch (e) { /* stay on the current screen; the server still enforces the date rules */ }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { hiddenAt = Date.now(); return; }
+    if (S.token && S.today && hiddenAt && Date.now() - hiddenAt > 60000) refreshAfterIdle();
+  });
+
   start();
 </script>
 </body>
