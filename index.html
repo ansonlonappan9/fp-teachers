@@ -82,7 +82,7 @@
   const API_URL = location.hostname === 'teachers.fortepiano.in' ? PROD_URL : STAGING_URL;
   const KEY = 'fp_token';
   const main = document.getElementById('main');
-  const PAGE_VERSION = '2026-11-17.2';   // keep in step with APP_VERSION in Core.gs when both change
+  const PAGE_VERSION = '2026-11-19.1';   // keep in step with APP_VERSION in Core.gs when both change
   const S = { token: null, role: '', students: [], stages: [], logged: {}, loggedIds: {}, today: '', maxBack: 3, view: 'msg', form: null };
   document.getElementById('ver').textContent = 'page ' + PAGE_VERSION;
 
@@ -90,7 +90,7 @@
     FUTURE_DATE: 'The class date cannot be in the future.',
     BAD_DATE: 'Pick a valid class date.',
     REASON_REQUIRED: 'Add a short reason for the absence.',
-    ALREADY_LOGGED: 'This class is already logged for that date.',
+    ALREADY_LOGGED: 'This class is already logged for that date. If you did not see the confirmation, go back and tap the student marked "Logged today" to see the parent update.',
     NOT_YOUR_STUDENT: 'This student is not assigned to you.',
     KIND_MISMATCH: 'The class type does not match this student’s status. Ask the admin to update the student.',
     NOT_ALLOWED: 'Only the head teacher can log assessments.',
@@ -121,7 +121,16 @@
   const initials = n => n.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
   const addDays = (iso, n) => new Date(Date.parse(iso + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
   const inr = n => '₹' + Number(n).toLocaleString('en-IN');
-  const niceMonth = ym => new Date(ym + '-01T00:00:00Z').toLocaleDateString('en-IN', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+  const niceMonth = ym => /^\d{4}-\d{2}$/.test(ym) ? new Date(ym + '-01T00:00:00Z').toLocaleDateString('en-IN', { month: 'short', year: 'numeric', timeZone: 'UTC' }) : 'Unknown month';
+  // "11 left" or, when a make-up is owed, "10 + 1 make-up left". A make-up is part of the balance, not an extra.
+  const leftText = (remaining, pending) => { const n = (pending || []).length; return n && remaining - n >= 0 ? `${remaining - n} + ${n} make-up left` : `${remaining} left`; };
+  // Drafts: what the teacher typed (and the request id) survives a reload or a lost signal for 24 hours.
+  const DRAFT_PREFIX = 'fp_draft_';
+  const newRequestId = () => 'r' + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2));
+  function readDraft(key) { try { const d = JSON.parse(localStorage.getItem(key) || 'null'); return d && Date.now() - d.t < 864e5 ? d : null; } catch (e) { return null; } }
+  function writeDraft(key, data) { try { localStorage.setItem(key, JSON.stringify(Object.assign({ t: Date.now() }, data))); } catch (e) { /* storage full or blocked: no draft, nothing else changes */ } }
+  function clearDraft(key) { try { localStorage.removeItem(key); } catch (e) {} }
+  function clearAllDrafts() { try { Object.keys(localStorage).filter(k => k.indexOf(DRAFT_PREFIX) === 0).forEach(k => localStorage.removeItem(k)); } catch (e) {} }
   const niceDate = iso => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 
   function show(title, text, retry) {
@@ -151,6 +160,7 @@
   }
 
   function unauthorized() {
+    clearAllDrafts();
     try { localStorage.removeItem(KEY); } catch (e) {}
     show('This link no longer works', 'Ask the Fortepiano admin for a new link.');
   }
@@ -238,6 +248,7 @@
     const strip = h('button', { className: 'strip', type: 'button', textContent: 'This month…', onclick: showEarnings });
     const pendingCount = S.students.reduce((n, st) => n + (st.pending || []).length, 0);
     put(h('h1', { textContent: 'My students' }), strip,
+      h('button', { className: 'strip', type: 'button', textContent: 'Schedule: next 3 days  ›', onclick: showSchedule }),
       pendingCount ? h('button', { className: 'strip', type: 'button', textContent: `Pending make-ups: ${pendingCount}  ›`, onclick: showPending }) : null,
       S.role === 'ADMIN' ? h('button', { className: 'back', type: 'button', textContent: 'Log an assessment ›', onclick: showPicker }) : null);
     loadStrip(strip);
@@ -248,7 +259,7 @@
         h('span', { className: 'avatar', textContent: initials(s.name) }),
         h('span', { className: 'name', textContent: s.name }),
         s.status === 'TRIAL' ? h('span', { className: 'badge', textContent: 'Trial' }) : null,
-        s.remaining != null ? h('span', { className: 'left', textContent: s.remaining + ' left' }) : null,
+        s.remaining != null ? h('span', { className: 'left', textContent: leftText(s.remaining, s.pending) }) : null,
         s.renewalDue ? h('span', { className: 'badge', textContent: 'Renewal due' }) : null,
         done ? h('span', { className: 'badge ' + (done === 'ABSENT' ? 'absent' : 'done'), textContent: (done === 'ABSENT' ? 'Absent today' : 'Logged today') + ' ›' }) : null));
     });
@@ -257,7 +268,9 @@
   function showForm(s, extra) {
     const assessment = extra === true;
     const makeup = extra && extra !== true ? extra : null;
-    const requestId = 'r' + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2));
+    const dKey = DRAFT_PREFIX + s.studentId + '_' + (makeup ? 'M' + makeup.rescheduleId : (assessment ? 'A' : 'C'));
+    const draft = readDraft(dKey);
+    const requestId = (draft && draft.requestId) || newRequestId();
     let status = 'ATTENDED';
 
     const bAtt = h('button', { type: 'button', className: 'att', textContent: 'Attended' });
@@ -281,8 +294,16 @@
       covered.placeholder = status === 'ABSENT' ? 'e.g. Parent cancelled at 3 pm, child unwell' : 'e.g. Hanon 3–4, dynamics in piece B';
       hwField.style.display = status === 'ABSENT' ? 'none' : '';
     }
-    bAtt.onclick = () => { status = 'ATTENDED'; sync(); };
-    bAbs.onclick = () => { status = 'ABSENT'; sync(); };
+    if (draft) {
+      status = draft.status === 'ABSENT' ? 'ABSENT' : 'ATTENDED';
+      covered.value = draft.covered || ''; hw.value = draft.hw || '';
+      if (draft.stage) stage.value = draft.stage;
+      if (draft.date && draft.date >= date.min && draft.date <= date.max) date.value = draft.date;
+    }
+    const keep = () => writeDraft(dKey, { requestId, status, date: date.value, stage: stage.value, covered: covered.value, hw: hw.value });
+    covered.oninput = keep; hw.oninput = keep; stage.onchange = keep; date.onchange = keep;
+    bAtt.onclick = () => { status = 'ATTENDED'; sync(); keep(); };
+    bAbs.onclick = () => { status = 'ABSENT'; sync(); keep(); };
     sync();
 
     function say(text) { note.textContent = text; note.classList.add('show'); }
@@ -307,10 +328,12 @@
       if (!r.ok) {
         submit.disabled = false; submit.textContent = 'Log class';
         const tooOld = `Classes can be logged up to ${S.maxBack} days late. Ask the admin to add this one.`;
+        if (r.error === 'ALREADY_LOGGED') refreshAfterIdle();     // so the student shows as logged and the update can be reopened
         return say(r.error === 'TOO_OLD' ? tooOld : (ERRORS[r.error] || 'Could not save. Check the form and try again.'));
       }
+      clearDraft(dKey);
       if (!assessment && !makeup) { S.logged[s.studentId] = status; S.loggedIds[s.studentId] = r.classId; }
-      if (r.term) Object.assign(s, { remaining: r.term.remaining, renewalDue: r.term.renewalDue, reschedulesUsed: r.term.reschedulesUsed, canReschedule: r.term.canReschedule, pending: r.term.pending || [] });
+      if (r.term) Object.assign(s, { remaining: r.term.remaining, renewalDue: r.term.renewalDue, reschedulesUsed: r.term.reschedulesUsed, canReschedule: r.term.canReschedule, teacherReschedulesUsed: r.term.teacherReschedulesUsed, pending: r.term.pending || [] });
       showDone(s, status, date.value, r);
     };
 
@@ -318,7 +341,9 @@
       h('button', { className: 'back', type: 'button', textContent: '‹ Back to students', onclick: showList }),
       h('h1', { textContent: assessment ? 'Assessment: ' + s.name : (makeup ? 'Make-up: ' + s.name : s.name) }),
       (!assessment && !makeup && s.status !== 'TRIAL') ? h('button', { className: 'back', type: 'button', textContent: 'Reschedule this class instead ›', onclick: () => showReschedule(s) }) : null,
-      makeup ? h('p', { className: 'note show warn', textContent: `Make-up for the class of ${niceDate(makeup.originalDate)}. ${makeup.daysLeft === 0 ? 'Today is the last day.' : makeup.daysLeft + ' day' + (makeup.daysLeft === 1 ? '' : 's') + ' left (last day ' + niceDate(makeup.expiresOn) + ').'}` }) : null,
+      draft ? h('p', { className: 'hint', textContent: 'Your unsaved draft was restored.' }) : null,
+      (s.rate != null) ? h('p', { className: 'hint', textContent: 'Your rate for this student: ' + inr(s.rate) + ' per class.' }) : null,
+      makeup ? h('p', { className: 'note show warn', textContent: `Make-up for the class of ${niceDate(makeup.originalDate)}. ` + (makeup.daysLeft == null ? 'No deadline for this make-up.' : (makeup.daysLeft === 0 ? 'Today is the last day.' : makeup.daysLeft + ' day' + (makeup.daysLeft === 1 ? '' : 's') + ' left (last day ' + niceDate(makeup.expiresOn) + ').')) }) : null,
       h('div', { className: 'seg' }, bAtt, bAbs),
       h('div', { className: 'field' }, h('label', { htmlFor: 'f-date', textContent: 'Class date' }), date),
       (assessment || s.status === 'TRIAL') ? h('p', { className: 'note show', style: 'background:#fdf8ef;color:#8a6508;margin:0 0 16px', textContent: assessment ? 'Assessment session: not paid, and it does not use up a paid class.' : 'This is a trial class.' }) : null,
@@ -329,8 +354,10 @@
 
   function showReschedule(s) {
     S.view = 'reschedule'; S.form = null;
-    const requestId = 'r' + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2));
-    let by = s.canReschedule ? 'PARENT' : 'TEACHER';
+    const dKey = DRAFT_PREFIX + s.studentId + '_R';
+    const draft = readDraft(dKey);
+    const requestId = (draft && draft.requestId) || newRequestId();
+    let by = draft && (draft.by === 'TEACHER' || (draft.by === 'PARENT' && s.canReschedule)) ? draft.by : (s.canReschedule ? 'PARENT' : 'TEACHER');
 
     const bPar = h('button', { type: 'button', className: 'opt', textContent: 'Parent asked' });
     const bTea = h('button', { type: 'button', className: 'opt', textContent: 'Teacher asked' });
@@ -345,21 +372,33 @@
     const err = h('div', { className: 'note error', role: 'alert' });
     const submit = h('button', { type: 'button', className: 'btn', textContent: 'Log reschedule' });
 
+    if (draft) {
+      if (draft.oDate && draft.oDate >= oDate.min && draft.oDate <= oDate.max) oDate.value = draft.oDate;
+      oTime.value = draft.oTime || ''; mDate.value = draft.mDate || ''; mTime.value = draft.mTime || '';
+      emerg.checked = !!draft.emerg; note.value = draft.note || '';
+    }
+    const keep = () => writeDraft(dKey, { requestId, by, oDate: oDate.value, oTime: oTime.value, mDate: mDate.value, mTime: mTime.value, emerg: !!emerg.checked, note: note.value });
     const hoursAhead = () => oDate.value && oTime.value ? (new Date(oDate.value + 'T' + oTime.value + ':00+05:30') - Date.now()) / 3600000 : null;
     function sync() {
       bPar.setAttribute('aria-pressed', by === 'PARENT');
       bTea.setAttribute('aria-pressed', by === 'TEACHER');
       const hrs = hoursAhead();
-      let msg = '';
-      if (hrs != null && by === 'PARENT' && hrs < 2) msg = 'Under 2 hours notice. If the parent cannot attend, log Absent instead.';
-      else if (hrs != null && by === 'PARENT' && hrs < 24) msg = 'Under 24 hours notice. A reschedule is only for a genuine emergency: tick Emergency and add a note. Otherwise log Absent.';
-      else if (hrs != null && by === 'TEACHER' && hrs < 24) msg = 'Under 24 hours notice: the make-up class will not be paid (agreement clause 5.6).';
+      const msgs = [];
+      if (hrs != null && by === 'PARENT' && hrs < 2) msgs.push('Under 2 hours notice. If the parent cannot attend, log Absent instead.');
+      else if (hrs != null && by === 'PARENT' && hrs < 24) msgs.push('Under 24 hours notice. A reschedule is only for a genuine emergency: tick Emergency and add a note. Otherwise log Absent.');
+      if (by === 'TEACHER') {
+        if (hrs != null && hrs < 24) msgs.push("You are rescheduling a class with under 24 hours' notice. This entry will be reviewed at the end of the month.");
+        const prior = s.teacherReschedulesUsed || 0;
+        if (prior >= 1) msgs.push(`You have already rescheduled ${prior} class${prior === 1 ? '' : 'es'} for this student this term. This entry will be reviewed at the end of the month.`);
+      }
+      const msg = msgs.join(' ');
       hint.textContent = msg;
       hint.classList[msg ? 'add' : 'remove']('show');
     }
-    bPar.onclick = () => { if (!bPar.disabled) { by = 'PARENT'; sync(); } };
-    bTea.onclick = () => { by = 'TEACHER'; sync(); };
-    oDate.onchange = sync; oTime.onchange = sync;
+    bPar.onclick = () => { if (!bPar.disabled) { by = 'PARENT'; sync(); keep(); } };
+    bTea.onclick = () => { by = 'TEACHER'; sync(); keep(); };
+    oDate.onchange = () => { sync(); keep(); }; oTime.onchange = () => { sync(); keep(); };
+    mDate.onchange = keep; mTime.onchange = keep; emerg.onchange = keep; note.oninput = keep;
     sync();
     const say = text => { err.textContent = text; err.classList.add('show'); };
 
@@ -381,7 +420,8 @@
         submit.disabled = false; submit.textContent = 'Log reschedule';
         return say(r.error === 'TOO_OLD' ? `Reschedules can be logged up to ${S.maxBack} days late. Ask the admin.` : (ERRORS[r.error] || 'Could not save. Check the form and try again.'));
       }
-      if (r.term) Object.assign(s, { remaining: r.term.remaining, renewalDue: r.term.renewalDue, reschedulesUsed: r.term.reschedulesUsed, canReschedule: r.term.canReschedule, pending: r.term.pending || [] });
+      clearDraft(dKey);
+      if (r.term) Object.assign(s, { remaining: r.term.remaining, renewalDue: r.term.renewalDue, reschedulesUsed: r.term.reschedulesUsed, canReschedule: r.term.canReschedule, teacherReschedulesUsed: r.term.teacherReschedulesUsed, pending: r.term.pending || [] });
       showRescheduled(s, r, oDate.value);
     };
 
@@ -402,14 +442,12 @@
 
   function showRescheduled(s, r, originalDate) {
     S.view = 'rescheduled';
-    const why = { TEACHER_SHORT_NOTICE: 'You cancelled with under 24 hours notice, so the make-up class will not be paid (agreement clause 5.6).',
-      TEACHER_REPEAT: 'This is a second class you cancelled for this student this term, so the make-up class will not be paid (agreement clause 5.7).' };
     put(
       h('div', { className: 'ok' },
         h('strong', { textContent: 'Reschedule logged' }),
-        h('div', { textContent: `${s.name}: class of ${niceDate(originalDate)}. The make-up must be done by ${niceDate(r.expiresOn)}.` }),
-        r.term ? h('div', { textContent: `Parent reschedules this term: ${r.term.reschedulesUsed}/${r.term.rescheduleCap}.`, style: 'margin-top:8px;color:var(--muted)' }) : null),
-      r.makeupPay === 'UNPAID' ? h('p', { className: 'note show warn', textContent: why[r.payReason] || 'The make-up class for this reschedule will not be paid.' }) : null,
+        h('div', { textContent: `${s.name}: class of ${niceDate(originalDate)}. ` + (r.expiresOn ? `The make-up must be done by ${niceDate(r.expiresOn)}.` : 'The learner keeps the class; the make-up has no deadline.') }),
+        (r.term && r.expiresOn) ? h('div', { textContent: `Parent reschedules this term: ${r.term.reschedulesUsed}/${r.term.rescheduleCap}.`, style: 'margin-top:8px;color:var(--muted)' }) : null),
+      ...(r.warnings || []).map(w => h('p', { className: 'note show warn', textContent: w })),
       r.message ? messageBox(r.message, '') : h('p', { className: 'note show warn', textContent: 'Send the reschedule update to the parent on WhatsApp as usual.' }),
       h('button', { className: 'btn', type: 'button', textContent: 'Back to students', onclick: showList }));
   }
@@ -418,7 +456,7 @@
     S.view = 'pending';
     const items = [];
     S.students.forEach(st => (st.pending || []).forEach(p => items.push({ st, p })));
-    items.sort((a, b) => a.p.daysLeft - b.p.daysLeft);
+    items.sort((a, b) => (a.p.daysLeft == null ? 9999 : a.p.daysLeft) - (b.p.daysLeft == null ? 9999 : b.p.daysLeft));
     put(
       h('button', { className: 'back', type: 'button', textContent: '‹ Back to students', onclick: showList }),
       h('h1', { textContent: 'Pending make-ups' }),
@@ -426,7 +464,27 @@
       ...items.map(({ st, p }) => h('button', { className: 'card', type: 'button', onclick: () => showForm(st, p) },
         h('span', { className: 'avatar', textContent: initials(st.name) }),
         h('span', { className: 'name' }, st.name, h('div', { className: 'left', textContent: 'Rescheduled from ' + niceDate(p.originalDate) })),
-        h('span', { className: 'badge ' + (p.daysLeft <= 7 ? 'absent' : 'done'), textContent: p.daysLeft === 0 ? 'Last day today' : p.daysLeft + ' day' + (p.daysLeft === 1 ? '' : 's') + ' left' }))));
+        h('span', { className: 'badge ' + (p.daysLeft != null && p.daysLeft <= 7 ? 'absent' : 'done'), textContent: p.daysLeft == null ? 'No deadline' : (p.daysLeft === 0 ? 'Last day today' : p.daysLeft + ' day' + (p.daysLeft === 1 ? '' : 's') + ' left') }))));
+  }
+
+  async function showSchedule() {
+    show('Loading…', '');
+    try {
+      const r = await api('mySchedule');
+      if (r.error === 'UNAUTHORIZED') return unauthorized();
+      if (!r.ok) return show('Something went wrong', 'Please try again in a moment.', true);
+      S.view = 'schedule';
+      put(
+        h('button', { className: 'back', type: 'button', textContent: '‹ Back to students', onclick: showList }),
+        h('h1', { textContent: 'My schedule' }),
+        ...r.days.map(d => h('div', { className: 'erow' },
+          h('div', { className: 'ehead' }, h('b', { textContent: d.label })),
+          ...(d.items.length ? d.items.map(i => h('div', { className: 'enote', textContent: [i.time, i.student, i.location].filter(Boolean).join(' · ') }))
+            : [h('div', { className: 'enote', textContent: 'No classes listed.' })]))),
+        h('p', { className: 'hint', textContent: 'Your weekly timetable as set by the admin. It does not show reschedules or pauses.' }));
+    } catch (e) {
+      show('Could not load', 'Check your internet and try again.', true);
+    }
   }
 
   async function showPicker() {
@@ -452,7 +510,7 @@
       h('div', { className: 'ok' },
         h('strong', { textContent: 'Class logged' }),
         h('div', { textContent: `${s.name}: ${status === 'ABSENT' ? 'absent' : 'attended'}, ${niceDate(classDate)}.${late}` }),
-        r.term && r.term.remaining != null ? h('div', { textContent: `Classes left: ${r.term.remaining}.` + (r.term.renewalDue ? ' Renewal due.' : '') }) : null,
+        r.term && r.term.remaining != null ? h('div', { textContent: 'Classes left: ' + leftText(r.term.remaining, r.term.pending).replace(/ left$/, '') + '.' + (r.term.renewalDue ? ' Renewal due.' : '') }) : null,
         h('div', { textContent: r.message ? 'Your parent update is ready below.' : 'Send the parent update on WhatsApp as usual.', style: 'margin-top:8px;color:var(--muted)' })),
       r.message ? messageBox(r.message, r.messageNote) : null,
       h('button', { className: 'btn', type: 'button', textContent: 'Back to students', onclick: showList }));
