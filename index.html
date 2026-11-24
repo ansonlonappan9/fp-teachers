@@ -19,6 +19,8 @@
   h1 { font-family: Georgia, serif; font-size: 22px; font-weight: 400; margin-bottom: 14px; }
   .card { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; background: #fff; border: 1.5px solid var(--border); border-radius: 14px; padding: 14px 16px; margin-bottom: 8px; }
   .card:hover { border-color: var(--gold); }
+  .card:disabled { opacity: .6; cursor: default; }
+  .card:disabled:hover { border-color: var(--border); }
   .avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--cream); border: 1.5px solid var(--border); display: flex; align-items: center; justify-content: center; font-family: Georgia, serif; flex-shrink: 0; }
   .name { flex: 1; font-weight: 500; }
   .badge { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 100px; background: #fdf8ef; color: #8a6508; }
@@ -82,8 +84,8 @@
   const API_URL = location.hostname === 'teachers.fortepiano.in' ? PROD_URL : STAGING_URL;
   const KEY = 'fp_token';
   const main = document.getElementById('main');
-  const PAGE_VERSION = '2026-11-19.1';   // keep in step with APP_VERSION in Core.gs when both change
-  const S = { token: null, role: '', students: [], stages: [], logged: {}, loggedIds: {}, today: '', maxBack: 3, view: 'msg', form: null };
+  const PAGE_VERSION = '2026-11-24.1';   // keep in step with APP_VERSION in Core.gs when both change
+  const S = { token: null, role: '', students: [], stages: [], logged: {}, loggedIds: {}, today: '', maxBack: 3, view: 'msg', form: null, pauseMax: 31 };
   document.getElementById('ver').textContent = 'page ' + PAGE_VERSION;
 
   const ERRORS = {
@@ -107,7 +109,16 @@
     NO_SUCH_RESCHEDULE: 'That reschedule was not found. Go back and open the list again.',
     RESCHEDULE_MISMATCH: 'That reschedule belongs to another student.',
     RESCHEDULE_CLOSED: 'That reschedule is no longer waiting for a make-up. Go back and open the list again.',
-    MAKEUP_EXPIRED: 'The last day for this make-up has passed. Ask the admin.'
+    MAKEUP_EXPIRED: 'The last day for this make-up has passed. Ask the admin.',
+    PAUSED: 'This student is paused on that date, so nothing can be logged for it.',
+    MAKEUP_IN_PAUSE: 'The make-up date falls inside a pause. Pick a date outside the pause.',
+    PAUSE_PAST: 'A pause cannot start in the past. Pick today or a later date.',
+    PAUSE_TOO_FAR: 'That start date is too far ahead. A pause can start within the next 60 days.',
+    PAUSE_TOO_LONG: 'A pause can be at most 31 days, first and last day included.',
+    PAUSE_BAD_RANGE: 'The last day must be on or after the first day.',
+    PAUSE_USED: 'This student has already used the pause for this year.',
+    PAUSE_OVERLAP: 'This overlaps another pause of this student.',
+    CLASSES_IN_PAUSE: 'A class is already logged inside those days. Start the pause after it.'
   };
 
   function h(tag, props, ...kids) {
@@ -132,6 +143,9 @@
   function clearDraft(key) { try { localStorage.removeItem(key); } catch (e) {} }
   function clearAllDrafts() { try { Object.keys(localStorage).filter(k => k.indexOf(DRAFT_PREFIX) === 0).forEach(k => localStorage.removeItem(k)); } catch (e) {} }
   const niceDate = iso => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  // Pending make-ups whose last day falls inside a pause: they will expire, nothing is extended (D052).
+  const pendingAtRisk = (pending, start, end) => (pending || []).filter(p => p.expiresOn && p.expiresOn >= start && p.expiresOn <= end);
+  const riskText = hit => `Make-up classes cannot be taken while a student is paused. ${hit.length === 1 ? 'This make-up ends' : 'These make-ups end'} inside the pause and will expire unless done before it starts: ` + hit.map(p => `from ${niceDate(p.originalDate)} (last day ${niceDate(p.expiresOn)})`).join('; ') + '.';
 
   function show(title, text, retry) {
     S.view = 'msg';
@@ -169,7 +183,7 @@
     const list = await api('myStudents');
     if (list.error === 'UNAUTHORIZED') return unauthorized();
     if (!list.ok) return show('Something went wrong', 'Please try again in a moment.', true);
-    Object.assign(S, { students: list.students, stages: list.stages || [], logged: list.loggedToday || {}, loggedIds: list.loggedIds || {}, today: list.today, maxBack: list.backdateMaxDays == null ? 3 : list.backdateMaxDays });
+    Object.assign(S, { students: list.students, stages: list.stages || [], logged: list.loggedToday || {}, loggedIds: list.loggedIds || {}, today: list.today, maxBack: list.backdateMaxDays == null ? 3 : list.backdateMaxDays, pauseMax: list.pauseMaxDays || 31 });
     showList();
   }
 
@@ -255,10 +269,13 @@
     if (!S.students.length) return main.append(h('div', { className: 'msg', textContent: 'No students are assigned to you yet.' }));
     S.students.forEach(s => {
       const done = S.logged[s.studentId];
-      main.append(h('button', { className: 'card', type: 'button', onclick: (done && S.loggedIds[s.studentId]) ? () => showMessage(s, S.loggedIds[s.studentId]) : () => showForm(s) },
+      const paused = s.pause && s.pause.active, soon = s.pause && s.pause.upcoming;
+      main.append(h('button', { className: 'card', type: 'button', disabled: !!paused, onclick: (done && S.loggedIds[s.studentId]) ? () => showMessage(s, S.loggedIds[s.studentId]) : () => showForm(s) },
         h('span', { className: 'avatar', textContent: initials(s.name) }),
         h('span', { className: 'name', textContent: s.name }),
         s.status === 'TRIAL' ? h('span', { className: 'badge', textContent: 'Trial' }) : null,
+        paused ? h('span', { className: 'badge', textContent: 'Paused till ' + niceDate(paused.endDate) }) : null,
+        (!paused && soon) ? h('span', { className: 'badge', textContent: 'Pause from ' + niceDate(soon.startDate) }) : null,
         s.remaining != null ? h('span', { className: 'left', textContent: leftText(s.remaining, s.pending) }) : null,
         s.renewalDue ? h('span', { className: 'badge', textContent: 'Renewal due' }) : null,
         done ? h('span', { className: 'badge ' + (done === 'ABSENT' ? 'absent' : 'done'), textContent: (done === 'ABSENT' ? 'Absent today' : 'Logged today') + ' ›' }) : null));
@@ -341,6 +358,7 @@
       h('button', { className: 'back', type: 'button', textContent: '‹ Back to students', onclick: showList }),
       h('h1', { textContent: assessment ? 'Assessment: ' + s.name : (makeup ? 'Make-up: ' + s.name : s.name) }),
       (!assessment && !makeup && s.status !== 'TRIAL') ? h('button', { className: 'back', type: 'button', textContent: 'Reschedule this class instead ›', onclick: () => showReschedule(s) }) : null,
+      (!assessment && !makeup && s.status !== 'TRIAL' && s.pause && s.pause.canPause) ? h('button', { className: 'back', type: 'button', textContent: 'Pause classes for this student ›', onclick: () => showPause(s) }) : null,
       draft ? h('p', { className: 'hint', textContent: 'Your unsaved draft was restored.' }) : null,
       (s.rate != null) ? h('p', { className: 'hint', textContent: 'Your rate for this student: ' + inr(s.rate) + ' per class.' }) : null,
       makeup ? h('p', { className: 'note show warn', textContent: `Make-up for the class of ${niceDate(makeup.originalDate)}. ` + (makeup.daysLeft == null ? 'No deadline for this make-up.' : (makeup.daysLeft === 0 ? 'Today is the last day.' : makeup.daysLeft + ' day' + (makeup.daysLeft === 1 ? '' : 's') + ' left (last day ' + niceDate(makeup.expiresOn) + ').')) }) : null,
@@ -452,6 +470,86 @@
       h('button', { className: 'btn', type: 'button', textContent: 'Back to students', onclick: showList }));
   }
 
+  function showPause(s) {
+    S.view = 'pause'; S.form = null;
+    const dKey = DRAFT_PREFIX + s.studentId + '_P';
+    const draft = readDraft(dKey);
+    const requestId = (draft && draft.requestId) || newRequestId();
+    const sDate = h('input', { type: 'date', id: 'p-start', value: S.today, min: S.today, max: addDays(S.today, 60) });
+    const eDate = h('input', { type: 'date', id: 'p-end', value: addDays(S.today, 6), min: S.today });
+    const info = h('p', { className: 'hint' });
+    const risk = h('div', { className: 'note warn', role: 'status' });
+    const err = h('div', { className: 'note error', role: 'alert' });
+    const submit = h('button', { type: 'button', className: 'btn', textContent: 'Pause classes' });
+    if (draft) {
+      if (draft.start && draft.start >= sDate.min && draft.start <= sDate.max) sDate.value = draft.start;
+      if (draft.end) eDate.value = draft.end;
+    }
+    const keep = () => writeDraft(dKey, { requestId, start: sDate.value, end: eDate.value });
+    const length = () => sDate.value && eDate.value ? Math.round((Date.parse(eDate.value + 'T00:00:00Z') - Date.parse(sDate.value + 'T00:00:00Z')) / 864e5) + 1 : null;
+    function problem() {
+      const n = length();
+      if (n == null) return 'Pick the first and last day of the pause.';
+      if (n < 1) return 'The last day must be on or after the first day.';
+      if (n > S.pauseMax) return `A pause can be at most ${S.pauseMax} days. This one is ${n} days.`;
+      return '';
+    }
+    function sync() {
+      const p = problem(), n = length();
+      err.textContent = p; err.classList[p ? 'add' : 'remove']('show');
+      info.textContent = p ? '' : `${n} day${n === 1 ? '' : 's'} paused.`;
+      const hit = p ? [] : pendingAtRisk(s.pending, sDate.value, eDate.value);
+      risk.textContent = hit.length ? riskText(hit) : '';
+      risk.classList[hit.length ? 'add' : 'remove']('show');
+      submit.disabled = !!p;
+    }
+    sDate.onchange = () => { eDate.min = sDate.value || S.today; sync(); keep(); };
+    eDate.onchange = () => { sync(); keep(); };
+    sync();
+    const say = text => { err.textContent = text; err.classList.add('show'); };
+
+    submit.onclick = async () => {
+      if (problem()) return sync();
+      submit.disabled = true; submit.textContent = 'Saving…';
+      let r;
+      try {
+        r = await api('pause', { requestId, studentId: s.studentId, startDate: sDate.value, endDate: eDate.value });
+      } catch (e) {
+        submit.disabled = false; submit.textContent = 'Pause classes';
+        return say('Not saved: no connection. Check your internet and tap again. It will not create a duplicate.');
+      }
+      if (r.error === 'UNAUTHORIZED') return unauthorized();
+      if (!r.ok) {
+        submit.textContent = 'Pause classes'; sync();
+        return say(ERRORS[r.error] || 'Could not save. Check the dates and try again.');
+      }
+      clearDraft(dKey);
+      const win = { startDate: r.startDate, endDate: r.endDate };
+      s.pause = { active: r.startDate <= S.today ? win : null, upcoming: r.startDate > S.today ? win : null, canPause: false };
+      showPaused(s, r);
+    };
+
+    put(
+      h('button', { className: 'back', type: 'button', textContent: '‹ Back', onclick: () => showForm(s) }),
+      h('h1', { textContent: 'Pause: ' + s.name }),
+      h('p', { className: 'hint', textContent: `A pause can be used once a year and lasts at most ${S.pauseMax} days. No class, reschedule or make-up can be logged on paused days. A make-up whose last day falls inside the pause expires on schedule.` }),
+      draft ? h('p', { className: 'hint', textContent: 'Your unsaved draft was restored.' }) : null,
+      h('div', { className: 'field' }, h('label', { htmlFor: 'p-start', textContent: 'First day of the pause' }), sDate),
+      h('div', { className: 'field' }, h('label', { htmlFor: 'p-end', textContent: 'Last day of the pause' }), eDate),
+      info, risk, submit, err);
+  }
+
+  function showPaused(s, r) {
+    S.view = 'paused';
+    put(
+      h('div', { className: 'ok' },
+        h('strong', { textContent: 'Pause saved' }),
+        h('div', { textContent: `${s.name}: paused from ${niceDate(r.startDate)} to ${niceDate(r.endDate)}.` }),
+        h('div', { textContent: 'No more pauses are available for this student this year.', style: 'margin-top:8px;color:var(--muted)' })),
+      r.message ? messageBox(r.message, '') : h('p', { className: 'note show warn', textContent: 'Send the pause notice to the parent on WhatsApp as usual.' }),
+      h('button', { className: 'btn', type: 'button', textContent: 'Back to students', onclick: showList }));
+  }
+
   function showPending() {
     S.view = 'pending';
     const items = [];
@@ -549,7 +647,7 @@
       if (list.error === 'UNAUTHORIZED') return unauthorized();
       if (!list.ok) return;
       const oldToday = S.today;
-      Object.assign(S, { students: list.students, stages: list.stages || S.stages, logged: list.loggedToday || {}, loggedIds: list.loggedIds || {}, today: list.today, maxBack: list.backdateMaxDays == null ? 3 : list.backdateMaxDays });
+      Object.assign(S, { students: list.students, stages: list.stages || S.stages, logged: list.loggedToday || {}, loggedIds: list.loggedIds || {}, today: list.today, maxBack: list.backdateMaxDays == null ? 3 : list.backdateMaxDays, pauseMax: list.pauseMaxDays || 31 });
       if (S.view === 'list') showList();
       else if (S.view === 'form' && S.form && S.today !== oldToday) {
         const d = S.form.date;
